@@ -1,54 +1,54 @@
 package sample.stream;
 
-import java.io.BufferedReader;
-import java.io.FileReader;
-import java.io.FileOutputStream;
-import java.io.PrintWriter;
-import java.io.IOException;
+import akka.actor.ActorSystem;
+import akka.dispatch.OnComplete;
+import akka.stream.FlowMaterializer;
+import akka.stream.javadsl.Source;
+import scala.runtime.BoxedUnit;
+
+import java.io.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import akka.actor.ActorSystem;
-import akka.stream.FlowMaterializer;
-import akka.stream.MaterializerSettings;
-import akka.stream.Stop;
-import akka.stream.javadsl.Flow;
+
+import static akka.japi.Option.option;
 
 public class GroupLogFile {
   public static void main(String[] args) throws IOException {
     final ActorSystem system = ActorSystem.create("Sys");
-    final FlowMaterializer materializer = 
-      FlowMaterializer.create(MaterializerSettings.create(), system);
+    final FlowMaterializer materializer = FlowMaterializer.create(system);
 
     final Pattern loglevelPattern = Pattern.compile(".*\\[(DEBUG|INFO|WARN|ERROR)\\].*");
 
     // read lines from a log file
-    final BufferedReader fileReader = new BufferedReader(
-        new FileReader("src/main/resources/logfile.txt"));
-    Flow.create(() -> {
-        String line = fileReader.readLine();
-        if (line == null) throw Stop.getInstance();
-        else return line;
-      }).
+    final String inPath = "src/main/resources/logfile.txt";
+    final BufferedReader fileReader = new BufferedReader(new FileReader(inPath));
+
+    Source
+      .from(() -> option(fileReader.readLine())).
       // group them by log level
-      groupBy(line -> {
-        Matcher matcher = loglevelPattern.matcher(line);
+        groupBy(line -> {
+        final Matcher matcher = loglevelPattern.matcher(line);
         if (matcher.find()) return matcher.group(1);
         else return "OTHER";
       }).
       // write lines of each group to a separate file
-      foreach(levelProducerPair -> {
-          PrintWriter output = new PrintWriter(new FileOutputStream(
-            "target/log-" + levelProducerPair.a() + ".txt"), true);
-          Flow.create(levelProducerPair.b()).
-            foreach(line -> output.println(line)).
-            // close resource when the group stream is completed
-            onComplete(materializer, e -> output.close());
-      }).
-      onComplete(materializer, e -> {
-        if (e != null)
-          System.out.println("Failure: " + e.getMessage());
-        try { fileReader.close(); } catch (IOException ignore) {}
-        system.shutdown();
-      });
+        foreach(levelProducerPair -> {
+        final String outPath = "target/log-" + levelProducerPair.first() + ".txt";
+        final PrintWriter output = new PrintWriter(new FileOutputStream(outPath), true);
+
+        levelProducerPair.second().
+          foreach(output::println, materializer).
+          // close resource when the group stream is completed
+            onComplete(new OnComplete<BoxedUnit>() {
+            @Override public void onComplete(Throwable failure, BoxedUnit success) throws Exception {
+              output.close();
+            }
+          }, system.dispatcher());
+      }, materializer).
+      onComplete(new OnComplete<BoxedUnit>() {
+        @Override public void onComplete(Throwable failure, BoxedUnit success) throws Exception {
+          try { fileReader.close(); } catch (IOException ignore) { } finally { system.shutdown(); }
+        }
+      }, system.dispatcher());
   }
 }
