@@ -1,12 +1,11 @@
 package sample.stream;
 
+import java.util.Arrays;
+import scala.runtime.BoxedUnit;
 import akka.actor.ActorSystem;
 import akka.dispatch.OnComplete;
 import akka.stream.FlowMaterializer;
 import akka.stream.javadsl.Source;
-import scala.runtime.BoxedUnit;
-
-import java.util.Arrays;
 
 public class BasicTransformation {
   public static void main(String[] args) {
