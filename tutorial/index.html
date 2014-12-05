@@ -289,21 +289,8 @@ upper case.
 </p>
 <pre><code>
   final Flow<ByteString, ByteString> toUpper = 
-    Flow.<ByteString>empty().
-      map(byteStr -> toUpper(byteStr));
-  conn.handleWith(toUpper.asScala(), materializer); // FIXME there should be a Java API
-</code></pre>
-
-<p>Using the helper method:</p>
-<pre><code>
-  public static ByteString toUpper(ByteString byteString) {
-    // FIXME ByteString needs a proper Java API
-    try {
-      return new ByteString.ByteString1C(byteString.utf8String().toUpperCase().getBytes("utf-8"));
-    } catch (UnsupportedEncodingException e) {
-      throw new RuntimeException(e);
-    }
-  }  
+      Flow.<ByteString>empty().map(byteStr -> ByteString.fromString(byteStr.utf8String().toUpperCase()));
+  conn.handleWith(toUpper.asScala(), materializer);
 </code></pre>
 
 <p>
@@ -312,9 +299,14 @@ The connection from the client is established by calling <code>outgoingConnectio
 <code>Source<code/> and output <code>Sink</code>.
 </p>
 
+<pre><code>
+Future<ByteString> result = responseStream.fold(
+  ByteString.empty(), (acc, in) -> acc.concat(in), materializer);
+</code></pre>
+
 <p>
 In this sample the client sends a sequence of characters one-by-one to the server, aggregates the replies
-into a collection, and finally prints the contents of this collection.   
+into a single <code>ByteString</code>, and finally prints that.   
 </p>
 
 <p>
