@@ -56,7 +56,7 @@ public class TcpEcho {
       }
     }
   }
-
+  
   public static void server(ActorSystem system, InetSocketAddress serverAddress) {
     final FlowMaterializer materializer = FlowMaterializer.create(system);
 
@@ -106,21 +106,16 @@ public class TcpEcho {
       Source.from(testInput).via(Flow.adapt(StreamTcp.apply(system).outgoingConnection(serverAddress,
           Option.apply(null), immutableSeq(Collections.emptyList()), Duration.Inf(), Duration.Inf()).flow()));
     
-    Future<List<Character>> result = responseStream.fold(
-        new ArrayList<Character>(), (acc, in) -> {
-          for (byte b : in.toArray()) {
-            acc.add((char) b);
-          }
-          return acc;
-        }, materializer);
+    Future<ByteString> result = responseStream.fold(
+        ByteString.empty(), (acc, in) -> acc.concat(in), materializer);
     
-    result.onComplete(new OnComplete<List<Character>>() {
+    result.onComplete(new OnComplete<ByteString>() {
       @Override
-      public void onComplete(Throwable failure, List<Character> success) throws Exception {
+      public void onComplete(Throwable failure, ByteString success) throws Exception {
         if (failure != null) {
           System.err.println("Failure: " + failure.getMessage());
         } else {
-          System.out.println("Result: " + success);
+          System.out.println("Result: " + success.utf8String());
         }
         System.out.println("Shutting down client");
         system.shutdown();
