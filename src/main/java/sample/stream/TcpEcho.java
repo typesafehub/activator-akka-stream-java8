@@ -14,13 +14,13 @@ import akka.dispatch.OnComplete;
 import akka.dispatch.OnFailure;
 import akka.dispatch.OnSuccess;
 import akka.stream.FlowMaterializer;
-import akka.stream.io.StreamTcp;
-import akka.stream.io.StreamTcp.IncomingConnection;
-import akka.stream.io.StreamTcp.ServerBinding;
+import akka.stream.javadsl.StreamTcp;
+import akka.stream.javadsl.StreamTcp.IncomingConnection;
+import akka.stream.javadsl.StreamTcp.ServerBinding;
 import akka.stream.javadsl.Flow;
 import akka.stream.javadsl.Sink;
 import akka.stream.javadsl.Source;
-import akka.stream.scaladsl.MaterializedMap; // FIXME missing Java API
+import akka.stream.javadsl.MaterializedMap;
 import akka.util.ByteString;
 
 public class TcpEcho {
@@ -62,16 +62,12 @@ public class TcpEcho {
 
     final Sink<IncomingConnection> handler = Sink.foreach(conn -> {
       System.out.println("Client connected from: " + conn.remoteAddress());
-      conn.handleWith(Flow.<ByteString>empty().asScala(), materializer); // FIXME there should be a Java API
+      conn.handleWith(Flow.<ByteString>empty(), materializer);
     });
 
-    // FIXME Missing Java API StreamTcp.get
-    // FIXME bind with default parameters should be added
-    final ServerBinding binding = StreamTcp.apply(system).bind(serverAddress, 100, 
-        immutableSeq(Collections.emptyList()), Duration.Inf());
+    final ServerBinding binding = StreamTcp.get(system).bind(serverAddress);
 
-    // FIXME there should be a Java API
-    MaterializedMap materializedServer = binding.connections().to(handler.asScala()).run(materializer);
+    final MaterializedMap materializedServer = binding.connections().to(handler).run(materializer);
 
     final Future<InetSocketAddress> serverFuture = binding.localAddress(materializedServer);
 
@@ -100,11 +96,8 @@ public class TcpEcho {
       testInput.add(ByteString.fromString(String.valueOf(c)));
     }
     
-    // FIXME Missing Java API StreamTcp.get
-    // FIXME outgoingConnection with default parameters should be added
     Source<ByteString> responseStream =
-      Source.from(testInput).via(Flow.adapt(StreamTcp.apply(system).outgoingConnection(serverAddress,
-          Option.apply(null), immutableSeq(Collections.emptyList()), Duration.Inf(), Duration.Inf()).flow()));
+      Source.from(testInput).via(StreamTcp.get(system).outgoingConnection(serverAddress).flow());
     
     Future<ByteString> result = responseStream.fold(
         ByteString.empty(), (acc, in) -> acc.concat(in), materializer);

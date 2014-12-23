@@ -268,7 +268,7 @@ both client and server in the same JVM and the client connects to the server ove
 </p>
 
 <p>
-The server is started by calling <code>bind</code> on the <code>akka.stream.io.StreamTcp</code> extension.
+The server is started by calling <code>bind</code> on the <code>akka.stream.javadsl.StreamTcp</code> extension.
 It returns a <code>StreamTcp.ServerBinding</code>.
 Each new client connection is represented by a new <code>IncomingTcpConnection</code>
 element produced by the <code>connections</code> <code>Source&lt;StreamTcp.IncomingConnection&gt;</code> of the 
@@ -280,7 +280,7 @@ elements.
 In this sample the server sends back the same bytes as it receives.
 </p>
 <pre><code>
-conn.handleWith(Flow.<ByteString>empty().asScala(), materializer);
+conn.handleWith(Flow.<ByteString>empty(), materializer);
 </code></pre>
 
 <p>
@@ -290,12 +290,12 @@ upper case.
 <pre><code>
   final Flow<ByteString, ByteString> toUpper = 
       Flow.<ByteString>empty().map(byteStr -> ByteString.fromString(byteStr.utf8String().toUpperCase()));
-  conn.handleWith(toUpper.asScala(), materializer);
+  conn.handleWith(toUpper, materializer);
 </code></pre>
 
 <p>
 The connection from the client is established by calling <code>outgoingConnection</code> on the
-<code>akka.stream.io.StreamTcp</code> extension and attaching corresponding flow to input
+<code>akka.stream.javadsl.StreamTcp</code> extension and attaching corresponding flow to input
 <code>Source<code/> and output <code>Sink</code>.
 </p>
 
