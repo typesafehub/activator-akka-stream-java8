@@ -4,13 +4,13 @@ import java.util.Arrays;
 import scala.runtime.BoxedUnit;
 import akka.actor.ActorSystem;
 import akka.dispatch.OnComplete;
-import akka.stream.FlowMaterializer;
+import akka.stream.ActorFlowMaterializer;
 import akka.stream.javadsl.Source;
 
 public class BasicTransformation {
   public static void main(String[] args) {
     final ActorSystem system = ActorSystem.create("Sys");
-    final FlowMaterializer materializer = FlowMaterializer.create(system);
+    final ActorFlowMaterializer materializer = ActorFlowMaterializer.create(system);
 
     final String text =
       "Lorem Ipsum is simply dummy text of the printing and typesetting industry. " +
@@ -22,7 +22,7 @@ public class BasicTransformation {
       // transform
       map(line -> line.toUpperCase()).
       // print to console
-      foreach(System.out::println, materializer).
+      runForeach(System.out::println, materializer).
       onComplete(new OnComplete<BoxedUnit>() {
         @Override public void onComplete(Throwable failure, BoxedUnit success) throws Exception {
           system.shutdown();

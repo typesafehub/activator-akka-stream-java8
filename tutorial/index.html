@@ -49,13 +49,12 @@ Each DSL element produces a new Flow that can be further transformed, building
 up a description of the complete transformation pipeline. In order to execute
 this pipeline the <code>Flow</code> must be runnable (have both <code>Source</code>
 and <code>Sink</code> endpoints, and  is materialized by calling one of the execution
-methods which include <code>.run</code>, <code>.runWith</code> and <code>.foreach</code>.
+methods which include <code>.run</code>, <code>.runWith</code> and <code>.runForeach</code>.
 </p>
 
 <p>
 Running a <code>Flow</code> involves a process called materialization, which requires
-a <code>FlowMaterializer</code> configured for an actor system. This <code>FlowMaterializer</code>
-can (and usually is) an implicit value to streamline the calls.
+a <code>FlowMaterializer</code> configured for an actor system.
 </p>
 
 <p>
@@ -103,7 +102,7 @@ for example.
 <p>
 In this sample we convert each read line to upper case and printing it
 to the console. This is done in the lines <code>map(e -> e.toUpperCase)</code> and
-<code>foreach(System.out::println, materializer)</code>.
+<code>runForeach(System.out::println, materializer)</code>.
 </p>
 
 <p>
@@ -117,16 +116,16 @@ was over a function that converted, say, String to Int, the result would be a
 </p>
 
 <p>
-The <code>foreach(System.out::println, materializer)</code> constructs and attaches a <code>Sink</code>, in
+The <code>runForeach(System.out::println, materializer)</code> constructs and attaches a <code>Sink</code>, in
 this case an implementation called <code>ForeachSink</code> and again this is
 specifically a <code>ForeachSink&lt;String&gt;</code> which matches the type of the
 <code>Source&lt;String&gt;</code>. The result of attaching this matching <code>Sink</code>
 to the <code>Source</code> creates a <code>RunnableFlow</code> which is then also run
-buy the <code>foreach</code> call.
+buy the <code>runForeach</code> call.
 </p>
 
 <p>Unlike a <code>foreach</code> on a collection (which returns <code>Unit</code>), 
-the <code>foreach</code> on a Flow returns a <code>Future&lt;Unit&gt;</code> instead. Because
+the <code>runForeach</code> on a Flow returns a <code>Future&lt;Unit&gt;</code> instead. Because
 we get a <code>Future</code> back, we can use it to shutdown the actor system once the
 flow is completed. This is accomplished by the final line in the flow: 
 <pre><code>
@@ -255,7 +254,7 @@ and look at the resulting output log files in the
 
 <p>
 Akka Streams also provides a stream based API on top of 
-<a href="http://doc.akka.io/docs/akka/2.3.7/java/io.html" target="_blank">Akka I/O</a>.
+<a href="http://doc.akka.io/docs/akka/2.3.9/java/io.html" target="_blank">Akka I/O</a>.
 </p>
 
 <p>
@@ -300,7 +299,7 @@ The connection from the client is established by calling <code>outgoingConnectio
 </p>
 
 <pre><code>
-Future<ByteString> result = responseStream.fold(
+Future<ByteString> result = responseStream.runFold(
   ByteString.empty(), (acc, in) -> acc.concat(in), materializer);
 </code></pre>
 

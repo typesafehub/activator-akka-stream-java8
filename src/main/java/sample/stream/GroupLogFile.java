@@ -12,13 +12,13 @@ import java.util.regex.Pattern;
 import scala.runtime.BoxedUnit;
 import akka.actor.ActorSystem;
 import akka.dispatch.OnComplete;
-import akka.stream.FlowMaterializer;
+import akka.stream.ActorFlowMaterializer;
 import akka.stream.javadsl.Source;
 
 public class GroupLogFile {
   public static void main(String[] args) throws IOException {
     final ActorSystem system = ActorSystem.create("Sys");
-    final FlowMaterializer materializer = FlowMaterializer.create(system);
+    final ActorFlowMaterializer materializer = ActorFlowMaterializer.create(system);
 
     final Pattern loglevelPattern = Pattern.compile(".*\\[(DEBUG|INFO|WARN|ERROR)\\].*");
 
@@ -36,11 +36,11 @@ public class GroupLogFile {
             return "OTHER";
         }).
         // write lines of each group to a separate file
-        foreach(levelProducerPair -> {
+        runForeach(levelProducerPair -> {
           final String outPath = "target/log-" + levelProducerPair.first() + ".txt";
           final PrintWriter output = new PrintWriter(new FileOutputStream(outPath), true);
 
-          levelProducerPair.second().foreach(output::println, materializer).
+          levelProducerPair.second().runForeach(output::println, materializer).
           // close resource when the group stream is completed
               onComplete(new OnComplete<BoxedUnit>() {
                 @Override

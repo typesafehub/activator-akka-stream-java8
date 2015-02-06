@@ -13,7 +13,7 @@ import akka.actor.ActorSystem;
 import akka.dispatch.OnComplete;
 import akka.dispatch.OnFailure;
 import akka.dispatch.OnSuccess;
-import akka.stream.FlowMaterializer;
+import akka.stream.ActorFlowMaterializer;
 import akka.stream.javadsl.StreamTcp;
 import akka.stream.javadsl.StreamTcp.IncomingConnection;
 import akka.stream.javadsl.StreamTcp.ServerBinding;
@@ -58,7 +58,7 @@ public class TcpEcho {
   }
   
   public static void server(ActorSystem system, InetSocketAddress serverAddress) {
-    final FlowMaterializer materializer = FlowMaterializer.create(system);
+    final ActorFlowMaterializer materializer = ActorFlowMaterializer.create(system);
 
     final Sink<IncomingConnection> handler = Sink.foreach(conn -> {
       System.out.println("Client connected from: " + conn.remoteAddress());
@@ -89,7 +89,7 @@ public class TcpEcho {
   }
 
   public static void client(ActorSystem system, InetSocketAddress serverAddress) {
-    final FlowMaterializer materializer = FlowMaterializer.create(system);
+    final ActorFlowMaterializer materializer = ActorFlowMaterializer.create(system);
 
     final List<ByteString> testInput = new ArrayList<>();
     for (char c = 'a'; c <= 'z'; c++) {
@@ -99,7 +99,7 @@ public class TcpEcho {
     Source<ByteString> responseStream =
       Source.from(testInput).via(StreamTcp.get(system).outgoingConnection(serverAddress).flow());
     
-    Future<ByteString> result = responseStream.fold(
+    Future<ByteString> result = responseStream.runFold(
         ByteString.empty(), (acc, in) -> acc.concat(in), materializer);
     
     result.onComplete(new OnComplete<ByteString>() {

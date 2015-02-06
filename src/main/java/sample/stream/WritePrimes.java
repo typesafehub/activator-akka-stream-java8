@@ -9,7 +9,7 @@ import scala.concurrent.forkjoin.ThreadLocalRandom;
 import scala.runtime.BoxedUnit;
 import akka.actor.ActorSystem;
 import akka.dispatch.OnComplete;
-import akka.stream.FlowMaterializer;
+import akka.stream.ActorFlowMaterializer;
 import akka.stream.javadsl.Broadcast;
 import akka.stream.javadsl.FlowGraph;
 import akka.stream.javadsl.KeyedSink;
@@ -20,7 +20,7 @@ import akka.stream.javadsl.Source;
 public class WritePrimes {
   public static void main(String[] args) throws IOException {
     final ActorSystem system = ActorSystem.create("Sys");
-    final FlowMaterializer materializer = FlowMaterializer.create(system);
+    final ActorFlowMaterializer materializer = ActorFlowMaterializer.create(system);
 
     // generate random numbers
     final int maxRandomNumberSize = 1000000;
