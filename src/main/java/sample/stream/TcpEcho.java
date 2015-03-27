@@ -6,9 +6,11 @@ import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+
 import scala.Option;
 import scala.concurrent.Future;
 import scala.concurrent.duration.Duration;
+import scala.runtime.BoxedUnit;
 import akka.actor.ActorSystem;
 import akka.dispatch.OnComplete;
 import akka.dispatch.OnFailure;
@@ -20,7 +22,6 @@ import akka.stream.javadsl.StreamTcp.ServerBinding;
 import akka.stream.javadsl.Flow;
 import akka.stream.javadsl.Sink;
 import akka.stream.javadsl.Source;
-import akka.stream.javadsl.MaterializedMap;
 import akka.util.ByteString;
 
 public class TcpEcho {
@@ -60,25 +61,23 @@ public class TcpEcho {
   public static void server(ActorSystem system, InetSocketAddress serverAddress) {
     final ActorFlowMaterializer materializer = ActorFlowMaterializer.create(system);
 
-    final Sink<IncomingConnection> handler = Sink.foreach(conn -> {
+    final Sink<IncomingConnection, Future<BoxedUnit>> handler = Sink.foreach(conn -> {
       System.out.println("Client connected from: " + conn.remoteAddress());
       conn.handleWith(Flow.<ByteString>empty(), materializer);
     });
 
-    final ServerBinding binding = StreamTcp.get(system).bind(serverAddress);
+    final Future<ServerBinding> bindingFuture = 
+        StreamTcp.get(system)
+          .bind(serverAddress).to(handler).run(materializer);
 
-    final MaterializedMap materializedServer = binding.connections().to(handler).run(materializer);
-
-    final Future<InetSocketAddress> serverFuture = binding.localAddress(materializedServer);
-
-    serverFuture.onSuccess(new OnSuccess<InetSocketAddress>() {
+    bindingFuture.onSuccess(new OnSuccess<ServerBinding>() {
       @Override
-      public void onSuccess(InetSocketAddress address) {
-        System.out.println("Server started, listening on: " + address);
+      public void onSuccess(ServerBinding binding) {
+        System.out.println("Server started, listening on: " + binding.localAddress());
       }
     }, system.dispatcher());
 
-    serverFuture.onFailure(new OnFailure() {
+    bindingFuture.onFailure(new OnFailure() {
       @Override
       public void onFailure(Throwable e) {
         System.err.println("Server could not bind to " + serverAddress + " : " + e.getMessage());
@@ -96,8 +95,8 @@ public class TcpEcho {
       testInput.add(ByteString.fromString(String.valueOf(c)));
     }
     
-    Source<ByteString> responseStream =
-      Source.from(testInput).via(StreamTcp.get(system).outgoingConnection(serverAddress).flow());
+    Source<ByteString, BoxedUnit> responseStream =
+      Source.from(testInput).via(StreamTcp.get(system).outgoingConnection(serverAddress));
     
     Future<ByteString> result = responseStream.runFold(
         ByteString.empty(), (acc, in) -> acc.concat(in), materializer);

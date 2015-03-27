@@ -4,18 +4,15 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.Iterator;
+
 import scala.concurrent.Future;
 import scala.concurrent.forkjoin.ThreadLocalRandom;
 import scala.runtime.BoxedUnit;
 import akka.actor.ActorSystem;
 import akka.dispatch.OnComplete;
 import akka.stream.ActorFlowMaterializer;
-import akka.stream.javadsl.Broadcast;
-import akka.stream.javadsl.FlowGraph;
-import akka.stream.javadsl.KeyedSink;
-import akka.stream.javadsl.MaterializedMap;
-import akka.stream.javadsl.Sink;
-import akka.stream.javadsl.Source;
+import akka.stream.UniformFanOutShape;
+import akka.stream.javadsl.*;
 
 public class WritePrimes {
   public static void main(String[] args) throws IOException {
@@ -24,7 +21,7 @@ public class WritePrimes {
 
     // generate random numbers
     final int maxRandomNumberSize = 1000000;
-    final Source<Integer> primeSource = Source.from(new RandomIterable(maxRandomNumberSize)).
+    final Source<Integer, BoxedUnit> primeSource = Source.from(new RandomIterable(maxRandomNumberSize)).
     // filter prime numbers
         filter(WritePrimes::isPrime).
         // and neighbor +2 is also prime
@@ -32,24 +29,23 @@ public class WritePrimes {
 
     // write to file sink
     final PrintWriter output = new PrintWriter(new FileOutputStream("target/primes.txt"), true);
-    KeyedSink<Integer, Future<BoxedUnit>> slowSink = Sink.foreach(prime -> {
+    Sink<Integer, Future<BoxedUnit>> slowSink = Sink.foreach(prime -> {
       output.println(prime);
       // simulate slow consumer
         Thread.sleep(1000);
       });
 
     // console output sink
-    KeyedSink<Integer, Future<BoxedUnit>> consoleSink = Sink.foreach(System.out::println);
+    Sink<Integer, Future<BoxedUnit>> consoleSink = Sink.foreach(System.out::println);
 
-    // connect the graph
-    Broadcast<Integer> broadcast = Broadcast.create();
-    FlowGraph graph = FlowGraph.builder().addEdge(primeSource, broadcast).addEdge(broadcast, slowSink)
-        .addEdge(broadcast, consoleSink).build();
-
-    // and then run it (or call `run` directly on the builder)
-    MaterializedMap materialized = graph.run(materializer);
-
-    materialized.get(slowSink).onComplete(new OnComplete<BoxedUnit>() {
+    // connect the graph, materialize and retrieve the completion Future
+    final Future<BoxedUnit> future = FlowGraph.factory().closed(slowSink, (b, sink) -> {
+      final UniformFanOutShape<Integer, Integer> bcast = b.graph(Broadcast.<Integer> create(2));
+      b.from(primeSource).via(bcast).to(sink)
+                        .from(bcast).to(consoleSink);
+    }).run(materializer);
+    
+    future.onComplete(new OnComplete<BoxedUnit>() {
       @Override
       public void onComplete(Throwable failure, BoxedUnit success) throws Exception {
         if (failure != null) {

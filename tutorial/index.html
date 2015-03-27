@@ -195,6 +195,20 @@ sleep.
 </p>
 
 <p>
+The connections are made using the FlowGraph DSL: we use the <code>FlowGraph.factory().closed(...)</code>
+method to construct a runnable graph (substituting 'partial' for 'closed' would create one that has open
+inputs or outputs that remain to be connected). The first argument is the 'foreach' Sink that materializes
+to a <code>Future</code> that we can use to detect (abnormal) stream termination, the second argument is
+a lambda expression that takes a <code>FlowGraph.Builder</code> and the imported 'slowSink' shape and
+performs the actual wiring.
+</p>
+
+<p>
+The first step is to create and import a broadcast node with two outputs, then we use the builder to
+connect the source via the broadcast to both sinks.
+</p>
+
+<p>
 Try to run the <code>sample.stream.WritePrimes</code> class
 by selecting it in the 'Main class' menu in the <a href="#run" class="shortcut">Run</a> tab
 and click the 'Start' button.
