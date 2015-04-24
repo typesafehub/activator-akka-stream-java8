@@ -10,6 +10,7 @@ import scala.concurrent.forkjoin.ThreadLocalRandom;
 import scala.runtime.BoxedUnit;
 import akka.actor.ActorSystem;
 import akka.dispatch.OnComplete;
+import akka.japi.function.Procedure2;
 import akka.stream.ActorFlowMaterializer;
 import akka.stream.UniformFanOutShape;
 import akka.stream.javadsl.*;
