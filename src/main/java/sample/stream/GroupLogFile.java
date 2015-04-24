@@ -1,19 +1,20 @@
 package sample.stream;
 
-import java.io.BufferedReader;
-import java.io.FileOutputStream;
-import java.io.FileReader;
-import java.io.IOException;
-import java.io.PrintWriter;
+import akka.actor.ActorSystem;
+import akka.dispatch.OnComplete;
+import akka.stream.ActorFlowMaterializer;
+import akka.stream.io.SynchronousFileSink;
+import akka.stream.javadsl.Sink;
+import akka.stream.javadsl.Source;
+import akka.util.ByteString;
+import scala.concurrent.Future;
+import scala.runtime.BoxedUnit;
+
+import java.io.*;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import scala.runtime.BoxedUnit;
-import akka.actor.ActorSystem;
-import akka.dispatch.OnComplete;
-import akka.stream.ActorFlowMaterializer;
-import akka.stream.javadsl.Source;
 
 public class GroupLogFile {
   public static void main(String[] args) throws IOException {
@@ -27,7 +28,7 @@ public class GroupLogFile {
     final BufferedReader fileReader = new BufferedReader(new FileReader(inPath));
 
     Source.from(new FileIterable(fileReader)).
-    // group them by log level
+        // group them by log level
         groupBy(line -> {
           final Matcher matcher = loglevelPattern.matcher(line);
           if (matcher.find())
@@ -91,7 +92,7 @@ class FileIterable implements Iterable<String> {
         } else {
           row = readNext();
         }
-        
+
         if (row == null) {
           throw new NoSuchElementException("No more rows");
         } else {

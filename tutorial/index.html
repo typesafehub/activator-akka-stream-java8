@@ -35,13 +35,12 @@ A <code>Flow</code> may be connected to a <code>Source</code> and/or a
 <code>Sink</code>. It may also exist without either of these end points, as an
 "open" flow. Any open flow when connected to a <code>Source</code> itself becomes a 
 <code>Source</code> and likewise when connected to a <code>Sink</code> becomes a
-<code>Sink</code>. A <code>Flow</code> with both a <code>Source</code> and
+<code>Sink</code>. A <code>Flow</code> with both a <code>Source</code> and a
 <code>Sink</code> is called a <code>RunnableFlow</code> and may be executed.
 </p>
 <p> 
-The <code>Source</code> and can be constructed from a 
-collection, an iterator, a future, or a function 
-which is evaluated repeatedly. 
+The <code>Source</code> can be constructed from a collection, an iterator,
+a future, or a function which is evaluated repeatedly.
 </p>
 
 <p>
@@ -72,7 +71,7 @@ produced into a stream may be discarded by later processors, e.g. when using the
 <p>
 By default every operation is executed within its own <code>Actor</code>
 to enable full pipelining of the chained set of computations. This behavior
-is determined by the <code>akka.stream.FlowMaterializer</code> which is required
+is determined by the <code>akka.stream.ActorFlowMaterializer</code> which is required
 by those methods that materialize the Flow into a series of
 <code>org.reactivestreams.Processor</code> instances that are started and active.
 Synchronous compaction of steps is possible (but not yet implemented). 
@@ -117,14 +116,14 @@ was over a function that converted, say, String to Int, the result would be a
 
 <p>
 The <code>runForeach(System.out::println, materializer)</code> constructs and attaches a <code>Sink</code>, in
-this case an implementation called <code>ForeachSink</code> and again this is
-specifically a <code>ForeachSink&lt;String&gt;</code> which matches the type of the
+this case an implementation called <code>Sink.runForeach</code> and again this is
+specifically a <code>Sink.runForeach&lt;String&gt;</code> which matches the type of the
 <code>Source&lt;String&gt;</code>. The result of attaching this matching <code>Sink</code>
 to the <code>Source</code> creates a <code>RunnableFlow</code> which is then also run
-buy the <code>runForeach</code> call.
+bu the <code>runForeach</code> call.
 </p>
 
-<p>Unlike a <code>foreach</code> on a collection (which returns <code>Unit</code>), 
+<p>Unlike a <code>runForeach</code> on a collection (which returns <code>Unit</code>),
 the <code>runForeach</code> on a Flow returns a <code>Future&lt;Unit&gt;</code> instead. Because
 we get a <code>Future</code> back, we can use it to shutdown the actor system once the
 flow is completed. This is accomplished by the final line in the flow: 
@@ -139,7 +138,7 @@ onComplete(new OnComplete&lt;BoxedUnit&gt;() {
 <p>
 Try to run the <code>sample.stream.BasicTransformation</code> class
 by selecting it in the 'Main class' menu in the <a href="#run" class="shortcut">Run</a> tab
-and click the 'Start' button.
+and click the 'Run' button.
 </p>
 
 <p>
@@ -154,7 +153,7 @@ filter(line -> line.length > 3).
 
 <p>
 All stream manipulation operations can be found in the 
-<a href="http://doc.akka.io/api/akka-stream-and-http-experimental/1.0-M1/#akka.stream.javadsl.package" target="_blank">API documentation</a>.
+<a href="http://doc.akka.io/api/akka-stream-and-http-experimental/1.0-RC1/#akka.stream.javadsl.package" target="_blank">API documentation</a>.
 </p>
 
 </div>
@@ -197,7 +196,7 @@ sleep.
 <p>
 The connections are made using the FlowGraph DSL: we use the <code>FlowGraph.factory().closed(...)</code>
 method to construct a runnable graph (substituting 'partial' for 'closed' would create one that has open
-inputs or outputs that remain to be connected). The first argument is the 'foreach' Sink that materializes
+inputs or outputs that remain to be connected). The first argument is the 'runForeach' Sink that materializes
 to a <code>Future</code> that we can use to detect (abnormal) stream termination, the second argument is
 a lambda expression that takes a <code>FlowGraph.Builder</code> and the imported 'slowSink' shape and
 performs the actual wiring.
@@ -211,7 +210,7 @@ connect the source via the broadcast to both sinks.
 <p>
 Try to run the <code>sample.stream.WritePrimes</code> class
 by selecting it in the 'Main class' menu in the <a href="#run" class="shortcut">Run</a> tab
-and click the 'Start' button.
+and click the 'Run' button.
 </p>
 
 <p>
@@ -253,7 +252,7 @@ write the elements of each group to a separate file.
 <p>
 Try to run the <code>sample.stream.GroupLogFile</code> class
 by selecting it in the 'Main class' menu in the <a href="#run" class="shortcut">Run</a> tab
-and click the 'Start' button.
+and click the 'Run' button.
 </p>
 
 <p>
@@ -268,7 +267,7 @@ and look at the resulting output log files in the
 
 <p>
 Akka Streams also provides a stream based API on top of 
-<a href="http://doc.akka.io/docs/akka/2.3.9/java/io.html" target="_blank">Akka I/O</a>.
+<a href="http://doc.akka.io/docs/akka/2.3.10/java/io.html" target="_blank">Akka I/O</a>.
 </p>
 
 <p>
@@ -281,7 +280,7 @@ both client and server in the same JVM and the client connects to the server ove
 </p>
 
 <p>
-The server is started by calling <code>bind</code> on the <code>akka.stream.javadsl.StreamTcp</code> extension.
+The server is started by calling <code>bind</code> on the <code>akka.stream.javadsl.Tcp</code> extension.
 It returns a <code>StreamTcp.ServerBinding</code>.
 Each new client connection is represented by a new <code>IncomingTcpConnection</code>
 element produced by the <code>connections</code> <code>Source&lt;StreamTcp.IncomingConnection&gt;</code> of the 
@@ -308,7 +307,7 @@ upper case.
 
 <p>
 The connection from the client is established by calling <code>outgoingConnection</code> on the
-<code>akka.stream.javadsl.StreamTcp</code> extension and attaching corresponding flow to input
+<code>akka.stream.javadsl.Tcp</code> extension and attaching corresponding flow to input
 <code>Source<code/> and output <code>Sink</code>.
 </p>
 
@@ -325,7 +324,7 @@ into a single <code>ByteString</code>, and finally prints that.
 <p>
 Try to run the <code>sample.stream.TcpEcho</code> class
 by selecting it in the 'Main class' menu in the <a href="#run" class="shortcut">Run</a> tab
-and click the 'Start' button.
+and click the 'Run' button.
 </p>
 
 <p>
@@ -359,7 +358,7 @@ Type a few characters in the telnet session and press enter to see them echoed b
 <h2>Links</h2>
 
 <ul>
-<li><a href="http://doc.akka.io/api/akka-stream-and-http-experimental/1.0-M1/#akka.stream.javadsl.package" target="_blank">Akka Streams 1.0-M1 API documentation</a></li>
+<li><a href="http://doc.akka.io/api/akka-stream-and-http-experimental/1.0-RC1/#akka.stream.javadsl.package" target="_blank">Akka Streams 1.0-RC1 API documentation</a></li>
 <li><a href="http://www.reactive-streams.org/" target="_blank">Reactive Streams</a></li>
 </ul>
 
