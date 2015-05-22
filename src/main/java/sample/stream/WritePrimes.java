@@ -1,19 +1,26 @@
 package sample.stream;
 
+import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.Iterator;
 
+import akka.stream.io.SynchronousFileSink;
+import akka.stream.io.SynchronousFileSource;
+import akka.util.ByteString;
+import scala.Function1;
 import scala.concurrent.Future;
 import scala.concurrent.forkjoin.ThreadLocalRandom;
 import scala.runtime.BoxedUnit;
 import akka.actor.ActorSystem;
 import akka.dispatch.OnComplete;
+import scala.concurrent.Future;
 import akka.japi.function.Procedure2;
 import akka.stream.ActorFlowMaterializer;
 import akka.stream.UniformFanOutShape;
 import akka.stream.javadsl.*;
+import scala.util.Try;
 
 public class WritePrimes {
   public static void main(String[] args) throws IOException {
@@ -29,35 +36,30 @@ public class WritePrimes {
         filter(prime -> isPrime(prime + 2));
 
     // write to file sink
-    final PrintWriter output = new PrintWriter(new FileOutputStream("target/primes.txt"), true);
-    Sink<Integer, Future<BoxedUnit>> slowSink = Sink.foreach(prime -> {
-      output.println(prime);
-      // simulate slow consumer
+    Sink<ByteString, Future<Long>> output = SynchronousFileSink.create(new File("target/primes.txt"));
+    Sink<Integer, Future<Long>> slowSink =
+      Flow.of(Integer.class)
+      .map(i -> {
+        // simulate slow consumer
         Thread.sleep(1000);
-      });
+        return ByteString.fromString(i.toString());
+      }).<Future<Long>, Future<Long>>to(output, (unit, flong) -> flong);
 
     // console output sink
     Sink<Integer, Future<BoxedUnit>> consoleSink = Sink.foreach(System.out::println);
 
     // connect the graph, materialize and retrieve the completion Future
-    final Future<BoxedUnit> future = FlowGraph.factory().closed(slowSink, (b, sink) -> {
+    final Future<Long> future = FlowGraph.factory().closed(slowSink, (b, sink) -> {
       final UniformFanOutShape<Integer, Integer> bcast = b.graph(Broadcast.<Integer> create(2));
       b.from(primeSource).via(bcast).to(sink)
                         .from(bcast).to(consoleSink);
     }).run(materializer);
     
-    future.onComplete(new OnComplete<BoxedUnit>() {
+    future.onComplete(new OnComplete<Long>() {
       @Override
-      public void onComplete(Throwable failure, BoxedUnit success) throws Exception {
-        if (failure != null) {
-          System.err.println("Failure: " + failure);
-        }
-        try {
-          output.close();
-        } catch (Exception ignore) {
-        } finally {
-          system.shutdown();
-        }
+      public void onComplete(Throwable failure, Long success) throws Exception {
+        if (failure != null) System.err.println("Failure: " + failure);
+        system.shutdown();
       }
     }, system.dispatcher());
   }
