@@ -3,16 +3,20 @@ package sample.stream;
 import akka.actor.ActorSystem;
 import akka.dispatch.OnComplete;
 import akka.stream.ActorFlowMaterializer;
-import akka.stream.io.SynchronousFileSink;
-import akka.stream.javadsl.Sink;
-import akka.stream.javadsl.Source;
+import akka.stream.io.SynchronousFileSource;
+import akka.stream.stage.Context;
+import akka.stream.stage.StageState;
+import akka.stream.stage.StatefulStage;
+import akka.stream.stage.SyncDirective;
 import akka.util.ByteString;
-import scala.concurrent.Future;
 import scala.runtime.BoxedUnit;
 
-import java.io.*;
-import java.util.Iterator;
-import java.util.NoSuchElementException;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -25,9 +29,11 @@ public class GroupLogFile {
 
     // read lines from a log file
     final String inPath = "src/main/resources/logfile.txt";
-    final BufferedReader fileReader = new BufferedReader(new FileReader(inPath));
+    final File inputFile = new File(inPath);
 
-    Source.from(new FileIterable(fileReader)).
+    SynchronousFileSource.create(inputFile).
+        // parse bytestrings (chunks of data) to lines
+        transform(() -> parseLines("\n", 512)).
         // group them by log level
         groupBy(line -> {
           final Matcher matcher = loglevelPattern.matcher(line);
@@ -42,73 +48,79 @@ public class GroupLogFile {
           final PrintWriter output = new PrintWriter(new FileOutputStream(outPath), true);
 
           levelProducerPair.second().runForeach(output::println, materializer).
-          // close resource when the group stream is completed
+            // close resource when the group stream is completed
               onComplete(new OnComplete<BoxedUnit>() {
-                @Override
-                public void onComplete(Throwable failure, BoxedUnit success) throws Exception {
-                  output.close();
-                }
-              }, system.dispatcher());
+              @Override
+              public void onComplete(Throwable failure, BoxedUnit success) throws Exception {
+                output.close();
+              }
+            }, system.dispatcher());
         }, materializer).onComplete(new OnComplete<BoxedUnit>() {
           @Override
           public void onComplete(Throwable failure, BoxedUnit success) throws Exception {
-            try {
-              fileReader.close();
-            } catch (IOException ignore) {
-            } finally {
-              system.shutdown();
-            }
+            system.shutdown();
           }
         }, system.dispatcher());
   }
-}
 
-class FileIterable implements Iterable<String> {
+  public static StatefulStage<ByteString, String> parseLines(String separator, int maximumLineBytes) {
+    return new StatefulStage<ByteString, String>() {
 
-  private final BufferedReader fileReader;
-
-  FileIterable(BufferedReader fileReader) {
-    this.fileReader = fileReader;
-  }
-
-  @Override
-  public Iterator<String> iterator() {
-    return new Iterator<String>() {
-      private String nextRow = null;
-      private boolean active = false;
+      final ByteString separatorBytes = ByteString.fromString(separator);
+      final byte firstSeparatorByte = separatorBytes.head();
 
       @Override
-      public boolean hasNext() {
-        if (!active)
-          nextRow = readNext();
-        return nextRow != null;
+      public StageState<ByteString, String> initial() {
+        return new StageState<ByteString, String>() {
+          ByteString buffer = ByteString.empty();
+          int nextPossibleMatch = 0;
+
+          @Override
+          public SyncDirective onPush(ByteString chunk, Context<String> ctx) {
+            buffer = buffer.concat(chunk);
+            if (buffer.size() > maximumLineBytes) {
+              return ctx.fail(new IllegalStateException("Read " + buffer.size() + " bytes " +
+                                                          "which is more than " + maximumLineBytes + " without seeing a line terminator"));
+            } else {
+              return emit(doParse().iterator(), ctx);
+            }
+          }
+
+          private List<String> doParse() {
+            List<String> parsedLinesSoFar = new ArrayList<String>();
+            while (true) {
+              int possibleMatchPos = buffer.indexOf(firstSeparatorByte, nextPossibleMatch);
+              if (possibleMatchPos == -1) {
+                // No matching character, we need to accumulate more bytes into the buffer
+                nextPossibleMatch = buffer.size();
+                break;
+              } else if (possibleMatchPos + separatorBytes.size() > buffer.size()) {
+                // We have found a possible match (we found the first character of the terminator
+                // sequence) but we don't have yet enough bytes. We remember the position to
+                // retry from next time.
+                nextPossibleMatch = possibleMatchPos;
+                break;
+              } else {
+                if (buffer.slice(possibleMatchPos, possibleMatchPos + separatorBytes.size())
+                          .equals(separatorBytes)) {
+                  // Found a match
+                  String parsedLine = buffer.slice(0, possibleMatchPos).utf8String();
+                  buffer = buffer.drop(possibleMatchPos + separatorBytes.size());
+                  nextPossibleMatch -= possibleMatchPos + separatorBytes.size();
+                  parsedLinesSoFar.add(parsedLine);
+                } else {
+                  nextPossibleMatch += 1;
+                }
+              }
+            }
+            return parsedLinesSoFar;
+          }
+
+        };
       }
 
-      @Override
-      public String next() {
-        String row = null;
-        if (active) {
-          row = nextRow;
-        } else {
-          row = readNext();
-        }
-
-        if (row == null) {
-          throw new NoSuchElementException("No more rows");
-        } else {
-          nextRow = readNext();
-          return row;
-        }
-      }
-
-      private String readNext() {
-        active = true;
-        try {
-          return fileReader.readLine();
-        } catch (IOException e) {
-          throw new RuntimeException(e);
-        }
-      }
     };
   }
+
 }
+
