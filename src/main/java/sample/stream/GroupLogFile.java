@@ -2,7 +2,8 @@ package sample.stream;
 
 import akka.actor.ActorSystem;
 import akka.dispatch.OnComplete;
-import akka.stream.ActorFlowMaterializer;
+import akka.stream.ActorMaterializer;
+import akka.stream.io.Framing;
 import akka.stream.io.SynchronousFileSource;
 import akka.stream.stage.Context;
 import akka.stream.stage.StageState;
@@ -23,7 +24,7 @@ import java.util.regex.Pattern;
 public class GroupLogFile {
   public static void main(String[] args) throws IOException {
     final ActorSystem system = ActorSystem.create("Sys");
-    final ActorFlowMaterializer materializer = ActorFlowMaterializer.create(system);
+    final ActorMaterializer materializer = ActorMaterializer.create(system);
 
     final Pattern loglevelPattern = Pattern.compile(".*\\[(DEBUG|INFO|WARN|ERROR)\\].*");
 
@@ -33,7 +34,8 @@ public class GroupLogFile {
 
     SynchronousFileSource.create(inputFile).
         // parse bytestrings (chunks of data) to lines
-        transform(() -> parseLines("\n", 512)).
+        via(Framing.delimiter(ByteString.fromString(System.lineSeparator()), 512, true)).
+        map(bytestring -> bytestring.utf8String()).
         // group them by log level
         groupBy(line -> {
           final Matcher matcher = loglevelPattern.matcher(line);
@@ -63,64 +65,4 @@ public class GroupLogFile {
         }, system.dispatcher());
   }
 
-  public static StatefulStage<ByteString, String> parseLines(String separator, int maximumLineBytes) {
-    return new StatefulStage<ByteString, String>() {
-
-      final ByteString separatorBytes = ByteString.fromString(separator);
-      final byte firstSeparatorByte = separatorBytes.head();
-
-      @Override
-      public StageState<ByteString, String> initial() {
-        return new StageState<ByteString, String>() {
-          ByteString buffer = ByteString.empty();
-          int nextPossibleMatch = 0;
-
-          @Override
-          public SyncDirective onPush(ByteString chunk, Context<String> ctx) {
-            buffer = buffer.concat(chunk);
-            if (buffer.size() > maximumLineBytes) {
-              return ctx.fail(new IllegalStateException("Read " + buffer.size() + " bytes " +
-                                                          "which is more than " + maximumLineBytes + " without seeing a line terminator"));
-            } else {
-              return emit(doParse().iterator(), ctx);
-            }
-          }
-
-          private List<String> doParse() {
-            List<String> parsedLinesSoFar = new ArrayList<String>();
-            while (true) {
-              int possibleMatchPos = buffer.indexOf(firstSeparatorByte, nextPossibleMatch);
-              if (possibleMatchPos == -1) {
-                // No matching character, we need to accumulate more bytes into the buffer
-                nextPossibleMatch = buffer.size();
-                break;
-              } else if (possibleMatchPos + separatorBytes.size() > buffer.size()) {
-                // We have found a possible match (we found the first character of the terminator
-                // sequence) but we don't have yet enough bytes. We remember the position to
-                // retry from next time.
-                nextPossibleMatch = possibleMatchPos;
-                break;
-              } else {
-                if (buffer.slice(possibleMatchPos, possibleMatchPos + separatorBytes.size())
-                          .equals(separatorBytes)) {
-                  // Found a match
-                  String parsedLine = buffer.slice(0, possibleMatchPos).utf8String();
-                  buffer = buffer.drop(possibleMatchPos + separatorBytes.size());
-                  nextPossibleMatch -= possibleMatchPos + separatorBytes.size();
-                  parsedLinesSoFar.add(parsedLine);
-                } else {
-                  nextPossibleMatch += 1;
-                }
-              }
-            }
-            return parsedLinesSoFar;
-          }
-
-        };
-      }
-
-    };
-  }
-
 }
-
