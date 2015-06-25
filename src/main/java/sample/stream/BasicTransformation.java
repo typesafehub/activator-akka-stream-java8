@@ -4,13 +4,13 @@ import java.util.Arrays;
 import scala.runtime.BoxedUnit;
 import akka.actor.ActorSystem;
 import akka.dispatch.OnComplete;
-import akka.stream.ActorFlowMaterializer;
+import akka.stream.ActorMaterializer;
 import akka.stream.javadsl.Source;
 
 public class BasicTransformation {
   public static void main(String[] args) {
     final ActorSystem system = ActorSystem.create("Sys");
-    final ActorFlowMaterializer materializer = ActorFlowMaterializer.create(system);
+    final ActorMaterializer materializer = ActorMaterializer.create(system);
 
     final String text =
       "Lorem Ipsum is simply dummy text of the printing and typesetting industry. " +

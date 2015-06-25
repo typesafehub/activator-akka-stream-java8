@@ -17,7 +17,7 @@ import akka.actor.ActorSystem;
 import akka.dispatch.OnComplete;
 import scala.concurrent.Future;
 import akka.japi.function.Procedure2;
-import akka.stream.ActorFlowMaterializer;
+import akka.stream.ActorMaterializer;
 import akka.stream.UniformFanOutShape;
 import akka.stream.javadsl.*;
 import scala.util.Try;
@@ -25,7 +25,7 @@ import scala.util.Try;
 public class WritePrimes {
   public static void main(String[] args) throws IOException {
     final ActorSystem system = ActorSystem.create("Sys");
-    final ActorFlowMaterializer materializer = ActorFlowMaterializer.create(system);
+    final ActorMaterializer materializer = ActorMaterializer.create(system);
 
     // generate random numbers
     final int maxRandomNumberSize = 1000000;
@@ -43,7 +43,7 @@ public class WritePrimes {
         // simulate slow consumer
         Thread.sleep(1000);
         return ByteString.fromString(i.toString());
-      }).<Future<Long>, Future<Long>>to(output, (unit, flong) -> flong);
+      }).<Future<Long>, Future<Long>>toMat(output, (unit, flong) -> flong);
 
     // console output sink
     Sink<Integer, Future<BoxedUnit>> consoleSink = Sink.foreach(System.out::println);
@@ -54,7 +54,7 @@ public class WritePrimes {
       b.from(primeSource).via(bcast).to(sink)
                         .from(bcast).to(consoleSink);
     }).run(materializer);
-    
+
     future.onComplete(new OnComplete<Long>() {
       @Override
       public void onComplete(Throwable failure, Long success) throws Exception {
