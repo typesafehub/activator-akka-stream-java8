@@ -15,6 +15,7 @@ import akka.util.ByteString;
 import scala.concurrent.Future;
 import scala.runtime.BoxedUnit;
 
+import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,7 +32,7 @@ public class TcpEcho {
    * on 127.0.0.1:6001.
    *
    */
-  public static void main(String[] args) {
+  public static void main(String[] args) throws IOException {
     if (args.length == 0) {
       ActorSystem system = ActorSystem.create("ClientAndServer");
       InetSocketAddress serverAddress = new InetSocketAddress("127.0.0.1", 6000);

@@ -1,5 +1,6 @@
 package sample.stream;
 
+import java.io.IOException;
 import java.util.Arrays;
 import scala.runtime.BoxedUnit;
 import akka.actor.ActorSystem;
@@ -8,7 +9,7 @@ import akka.stream.ActorMaterializer;
 import akka.stream.javadsl.Source;
 
 public class BasicTransformation {
-  public static void main(String[] args) {
+  public static void main(String[] args) throws IOException {
     final ActorSystem system = ActorSystem.create("Sys");
     final ActorMaterializer materializer = ActorMaterializer.create(system);
 
