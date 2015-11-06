@@ -20,6 +20,8 @@ import akka.japi.function.Procedure2;
 import akka.stream.ActorMaterializer;
 import akka.stream.UniformFanOutShape;
 import akka.stream.javadsl.*;
+import akka.stream.ClosedShape;
+import akka.stream.Graph;
 import scala.util.Try;
 
 public class WritePrimes {
@@ -49,11 +51,13 @@ public class WritePrimes {
     Sink<Integer, Future<BoxedUnit>> consoleSink = Sink.foreach(System.out::println);
 
     // connect the graph, materialize and retrieve the completion Future
-    final Future<Long> future = FlowGraph.factory().closed(slowSink, (b, sink) -> {
-      final UniformFanOutShape<Integer, Integer> bcast = b.graph(Broadcast.<Integer> create(2));
-      b.from(primeSource).via(bcast).to(sink)
-                        .from(bcast).to(consoleSink);
-    }).run(materializer);
+    final Graph<ClosedShape, Future<Long>> graph = FlowGraph.create(slowSink, (b, sink) -> {
+      final UniformFanOutShape<Integer, Integer> bcast = b.add(Broadcast.<Integer> create(2));
+      b.from(b.add(primeSource)).viaFanOut(bcast).to(sink)
+                                     .from(bcast).to(b.add(consoleSink));
+      return ClosedShape.getInstance();
+    });
+    final Future<Long> future = RunnableGraph.fromGraph(graph).run(materializer);
 
     future.onComplete(new OnComplete<Long>() {
       @Override
