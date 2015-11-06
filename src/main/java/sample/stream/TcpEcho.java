@@ -60,7 +60,7 @@ public class TcpEcho {
 
     final Sink<IncomingConnection, Future<BoxedUnit>> handler = Sink.foreach(conn -> {
       System.out.println("Client connected from: " + conn.remoteAddress());
-      conn.handleWith(Flow.<ByteString>empty(), materializer);
+      conn.handleWith(Flow.<ByteString>create(), materializer);
     });
 
     final Future<ServerBinding> bindingFuture =
