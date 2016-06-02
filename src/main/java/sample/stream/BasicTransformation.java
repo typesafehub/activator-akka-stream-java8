@@ -2,6 +2,8 @@ package sample.stream;
 
 import java.io.IOException;
 import java.util.Arrays;
+
+import akka.NotUsed;
 import scala.runtime.BoxedUnit;
 import akka.actor.ActorSystem;
 import akka.dispatch.OnComplete;
@@ -21,14 +23,13 @@ public class BasicTransformation {
 
     Source.from(Arrays.asList(text.split("\\s"))).
       // transform
-      map(line -> line.toUpperCase()).
+      map(e -> e.toUpperCase()).
       // print to console
       runForeach(System.out::println, materializer).
-      onComplete(new OnComplete<BoxedUnit>() {
-        @Override public void onComplete(Throwable failure, BoxedUnit success) throws Exception {
-          system.shutdown();
-        }
-      }, system.dispatcher());
+      handle((done, failure) -> {
+        system.terminate();
+        return NotUsed.getInstance();
+      });
   }
 
 }

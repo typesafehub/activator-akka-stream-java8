@@ -1,5 +1,7 @@
 package sample.stream;
 
+import akka.Done;
+import akka.NotUsed;
 import akka.actor.ActorSystem;
 import akka.dispatch.OnComplete;
 import akka.dispatch.OnFailure;
@@ -19,6 +21,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletionStage;
 
 public class TcpEcho {
 
@@ -58,28 +61,24 @@ public class TcpEcho {
   public static void server(ActorSystem system, InetSocketAddress serverAddress) {
     final ActorMaterializer materializer = ActorMaterializer.create(system);
 
-    final Sink<IncomingConnection, Future<BoxedUnit>> handler = Sink.foreach(conn -> {
+    final Sink<IncomingConnection, CompletionStage<Done>> handler = Sink.foreach(conn -> {
       System.out.println("Client connected from: " + conn.remoteAddress());
       conn.handleWith(Flow.<ByteString>create(), materializer);
     });
 
-    final Future<ServerBinding> bindingFuture =
+
+    final CompletionStage<ServerBinding> bindingFuture =
       Tcp.get(system).bind(serverAddress.getHostString(), serverAddress.getPort()).to(handler).run(materializer);
 
-    bindingFuture.onSuccess(new OnSuccess<ServerBinding>() {
-      @Override
-      public void onSuccess(ServerBinding binding) {
+    bindingFuture.handle((ServerBinding binding, Throwable exception) -> {
+      if (binding != null) {
         System.out.println("Server started, listening on: " + binding.localAddress());
-      }
-    }, system.dispatcher());
-
-    bindingFuture.onFailure(new OnFailure() {
-      @Override
-      public void onFailure(Throwable e) {
-        System.err.println("Server could not bind to " + serverAddress + " : " + e.getMessage());
+      } else {
+        System.err.println("Server could not bind to " + serverAddress + " : " + exception.getMessage());
         system.shutdown();
       }
-    }, system.dispatcher());
+      return NotUsed.getInstance();
+    });
 
   }
 
@@ -91,25 +90,22 @@ public class TcpEcho {
       testInput.add(ByteString.fromString(String.valueOf(c)));
     }
 
-    Source<ByteString, BoxedUnit> responseStream =
+    Source<ByteString, NotUsed> responseStream =
       Source.from(testInput).via(Tcp.get(system).outgoingConnection(serverAddress.getHostString(), serverAddress.getPort()));
 
-    Future<ByteString> result = responseStream.runFold(
+    CompletionStage<ByteString> result = responseStream.runFold(
       ByteString.empty(), (acc, in) -> acc.concat(in), materializer);
 
-    result.onComplete(new OnComplete<ByteString>() {
-      @Override
-      public void onComplete(Throwable failure, ByteString success) throws Exception {
-        if (failure != null) {
-          System.err.println("Failure: " + failure.getMessage());
-        } else {
-          System.out.println("Result: " + success.utf8String());
-        }
-        System.out.println("Shutting down client");
-        system.shutdown();
+    result.handle((success, failure) -> {
+      if (failure != null) {
+        System.err.println("Failure: " + failure.getMessage());
+      } else {
+        System.out.println("Result: " + success.utf8String());
       }
-    }, system.dispatcher());
-
+      System.out.println("Shutting down client");
+      system.shutdown();
+      return NotUsed.getInstance();
+    });
   }
 
 }

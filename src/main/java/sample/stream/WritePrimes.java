@@ -1,28 +1,17 @@
 package sample.stream;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.PrintWriter;
-import java.util.Iterator;
-
-import akka.stream.io.SynchronousFileSink;
-import akka.stream.io.SynchronousFileSource;
-import akka.util.ByteString;
-import scala.Function1;
-import scala.concurrent.Future;
-import scala.concurrent.forkjoin.ThreadLocalRandom;
-import scala.runtime.BoxedUnit;
+import akka.Done;
+import akka.NotUsed;
 import akka.actor.ActorSystem;
-import akka.dispatch.OnComplete;
-import scala.concurrent.Future;
-import akka.japi.function.Procedure2;
-import akka.stream.ActorMaterializer;
-import akka.stream.UniformFanOutShape;
+import akka.stream.*;
 import akka.stream.javadsl.*;
-import akka.stream.ClosedShape;
-import akka.stream.Graph;
-import scala.util.Try;
+import akka.util.ByteString;
+import scala.concurrent.forkjoin.ThreadLocalRandom;
+
+import java.io.File;
+import java.io.IOException;
+import java.util.Iterator;
+import java.util.concurrent.CompletionStage;
 
 public class WritePrimes {
   public static void main(String[] args) throws IOException {
@@ -31,41 +20,41 @@ public class WritePrimes {
 
     // generate random numbers
     final int maxRandomNumberSize = 1000000;
-    final Source<Integer, BoxedUnit> primeSource = Source.from(new RandomIterable(maxRandomNumberSize)).
-    // filter prime numbers
+    final Source<Integer, NotUsed> primeSource = Source.from(new RandomIterable(maxRandomNumberSize)).
+         // filter prime numbers
         filter(WritePrimes::isPrime).
         // and neighbor +2 is also prime
         filter(prime -> isPrime(prime + 2));
 
     // write to file sink
-    Sink<ByteString, Future<Long>> output = SynchronousFileSink.create(new File("target/primes.txt"));
-    Sink<Integer, Future<Long>> slowSink =
+    Sink<ByteString, CompletionStage<IOResult>> output = FileIO.toFile(new File("target/primes.txt"));
+    Sink<Integer, CompletionStage<IOResult>> slowSink =
       Flow.of(Integer.class)
       .map(i -> {
         // simulate slow consumer
         Thread.sleep(1000);
         return ByteString.fromString(i.toString());
-      }).<Future<Long>, Future<Long>>toMat(output, (unit, flong) -> flong);
+      }).toMat(output, Keep.right());
 
     // console output sink
-    Sink<Integer, Future<BoxedUnit>> consoleSink = Sink.foreach(System.out::println);
+    Sink<Integer, CompletionStage<Done>> consoleSink = Sink.<Integer>foreach(System.out::println);
 
     // connect the graph, materialize and retrieve the completion Future
-    final Graph<ClosedShape, Future<Long>> graph = FlowGraph.create(slowSink, (b, sink) -> {
+    final Graph<ClosedShape, CompletionStage<IOResult>> graph = GraphDSL.create(slowSink, (b, sink) -> {
       final UniformFanOutShape<Integer, Integer> bcast = b.add(Broadcast.<Integer> create(2));
       b.from(b.add(primeSource)).viaFanOut(bcast).to(sink)
                                      .from(bcast).to(b.add(consoleSink));
       return ClosedShape.getInstance();
     });
-    final Future<Long> future = RunnableGraph.fromGraph(graph).run(materializer);
+    final CompletionStage<IOResult> future = RunnableGraph.fromGraph(graph).run(materializer);
 
-    future.onComplete(new OnComplete<Long>() {
-      @Override
-      public void onComplete(Throwable failure, Long success) throws Exception {
-        if (failure != null) System.err.println("Failure: " + failure);
-        system.shutdown();
-      }
-    }, system.dispatcher());
+    future.handle((ioResult, failure) -> {
+      if (failure != null) System.err.println("Failure: " + failure);
+      else if (!ioResult.wasSuccessful()) System.err.println("Writing to file failed " + ioResult.getError());
+      else System.out.println("Successfully wrote " + ioResult.getCount() + " bytes");
+      system.terminate();
+      return NotUsed.getInstance();
+    });
   }
 
   private static boolean isPrime(int n) {
