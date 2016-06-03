@@ -124,15 +124,14 @@ bu the <code>runForeach</code> call.
 </p>
 
 <p>Unlike a <code>runForeach</code> on a collection (which returns <code>Unit</code>),
-the <code>runForeach</code> on a Flow returns a <code>Future&lt;Unit&gt;</code> instead. Because
-we get a <code>Future</code> back, we can use it to shutdown the actor system once the
+the <code>runForeach</code> on a Flow returns a <code>CompletionStage&lt;Done&gt;</code> instead. Because
+we get a <code>CompletionStage</code> back, we can use it to shutdown the actor system once the
 flow is completed. This is accomplished by the final line in the flow:
 <pre><code>
-onComplete(new OnComplete&lt;BoxedUnit&gt;() {
-  @Override public void onComplete(Throwable failure, BoxedUnit success) throws Exception {
-    system.shutdown();
-  }
-}, system.dispatcher());
+handle((done, failure) -> {
+  system.terminate();
+  return NotUsed.getInstance();
+});
 </code></pre>
 
 <p>
@@ -153,7 +152,7 @@ filter(line -> line.length > 3).
 
 <p>
 All stream manipulation operations can be found in the
-<a href="http://doc.akka.io/api/akka-stream-and-http-experimental/2.0-M1/#akka.stream.javadsl.package" target="_blank">API documentation</a>.
+<a href="http://doc.akka.io/api/akka/2.4.6/#akka.stream.javadsl.package" target="_blank">API documentation</a>.
 </p>
 
 </div>
@@ -215,10 +214,7 @@ and click the 'Run' button.
 
 <p>
 Note that speed of the output in the console is limited by the slow file writer, i.e.
-one element per second. When running the app you will notice that elements are requestedin
-larger batches than precisely 1 by 1, this is because the File sink is tries to optimise its
-request behaviour in order to write as many elements at once to the target file. You can configure
-this behaviour by setting <code>.withAttributes(OperationAttributes.inputBuffer(initial, max))</code>.
+one element per second.
 </p>
 
 <p>
@@ -240,15 +236,10 @@ Open <a href="#code/src/main/java/sample/stream/GroupLogFile.java" class="shortc
 
 <p>
 We want to read a log file and pipe entries of different log level to separate files.
-For this the <code>groupBy</code> operator is useful. It demultiplexes the incoming
-flow into separate source flows, one for each element key. The key is computed for
-each element using the given function. When a new key is encountered for the first time
-it is emitted to the downstream consumer together with a fresh producer that will eventually
-produce all the elements of the substream.
 </p>
 
 <p>
-In this sample we group by a regular expression matching the log levels and then
+In this sample we exctract the level with a regular expression matching the log levels and then
 write the elements of each group to a separate file.
 </p>
 
@@ -270,7 +261,7 @@ and look at the resulting output log files in the
 
 <p>
 Akka Streams also provides a stream based API on top of
-<a href="http://doc.akka.io/docs/akka/2.3.11/java/io.html" target="_blank">Akka I/O</a>.
+<a href="http://doc.akka.io/docs/akka/2.4.6/java/io.html" target="_blank">Akka I/O</a>.
 </p>
 
 <p>
@@ -303,10 +294,10 @@ You can add transformation of the bytes using a <code>Flow</code>. For example c
 upper case.
 </p>
 <pre><code>
-  final Flow<ByteString, ByteString> toUpper =
-      Flow.<ByteString>empty().map(byteStr -> ByteString.fromString(byteStr.utf8String().toUpperCase()));
-  conn.handleWith(toUpper, materializer);
-</code></pre>
+final Flow&lt;ByteString, ByteString, NotUsed> toUpper =
+    Flow.&lt;ByteString>create().map(byteStr -> ByteString.fromString(byteStr.utf8String().toUpperCase()));
+conn.handleWith(toUpper, materializer);
+ </code></pre>
 
 <p>
 The connection from the client is established by calling <code>outgoingConnection</code> on the
@@ -315,7 +306,7 @@ The connection from the client is established by calling <code>outgoingConnectio
 </p>
 
 <pre><code>
-Future<ByteString> result = responseStream.runFold(
+Future&lt;ByteString> result = responseStream.runFold(
   ByteString.empty(), (acc, in) -> acc.concat(in), materializer);
 </code></pre>
 
@@ -361,7 +352,8 @@ Type a few characters in the telnet session and press enter to see them echoed b
 <h2>Links</h2>
 
 <ul>
-<li><a href="http://doc.akka.io/api/akka-stream-and-http-experimental/2.0-M1/#akka.stream.javadsl.package" target="_blank">Akka Streams 2.0-M1 API documentation</a></li>
+<li><a href="http://doc.akka.io/docs/akka/2.4.6/java/stream/index.html" target="_blank">Akka Streams 2.4.6 Documentation</a></li>
+<li><a href="http://doc.akka.io/api/akka/2.4.6/#akka.stream.javadsl.package" target="_blank">Akka Streams 2.4.6 API documentation</a></li>
 <li><a href="http://www.reactive-streams.org/" target="_blank">Reactive Streams</a></li>
 </ul>
 
