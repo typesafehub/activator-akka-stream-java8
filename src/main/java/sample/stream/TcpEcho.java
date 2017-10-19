@@ -7,10 +7,8 @@ import akka.dispatch.OnComplete;
 import akka.dispatch.OnFailure;
 import akka.dispatch.OnSuccess;
 import akka.stream.ActorMaterializer;
-import akka.stream.javadsl.Flow;
-import akka.stream.javadsl.Sink;
-import akka.stream.javadsl.Source;
-import akka.stream.javadsl.Tcp;
+import akka.stream.OverflowStrategy;
+import akka.stream.javadsl.*;
 import akka.stream.javadsl.Tcp.IncomingConnection;
 import akka.stream.javadsl.Tcp.ServerBinding;
 import akka.util.ByteString;
@@ -61,11 +59,21 @@ public class TcpEcho {
   public static void server(ActorSystem system, InetSocketAddress serverAddress) {
     final ActorMaterializer materializer = ActorMaterializer.create(system);
 
+    final List<ByteString> testInput = new ArrayList<>();
+    for (char c = 'a'; c <= 'z'; c++) {
+      // Note all commands are \n-terminated, even the last one.
+      testInput.add(ByteString.fromString("COMMAND " + String.valueOf(c) + "\n"));
+    }
+
+    final Sink<ByteString, CompletionStage<Done>> responseFromClientSink =
+      Framing.delimiter(ByteString.fromString("\n"), 120)
+        .toMat(Sink.foreach(bs -> System.out.println("Got response from client: " + bs.utf8String())), Keep.right());
+
     final Sink<IncomingConnection, CompletionStage<Done>> handler = Sink.foreach(conn -> {
       System.out.println("Client connected from: " + conn.remoteAddress());
-      conn.handleWith(Flow.<ByteString>create(), materializer);
+      Flow<ByteString, ByteString, NotUsed> flow = Flow.fromSinkAndSource(responseFromClientSink, Source.from(testInput));
+      conn.handleWith(flow, materializer);
     });
-
 
     final CompletionStage<ServerBinding> bindingFuture =
       Tcp.get(system).bind(serverAddress.getHostString(), serverAddress.getPort()).to(handler).run(materializer);
@@ -75,35 +83,38 @@ public class TcpEcho {
         System.out.println("Server started, listening on: " + binding.localAddress());
       } else {
         System.err.println("Server could not bind to " + serverAddress + " : " + exception.getMessage());
-        system.shutdown();
+        system.terminate();
       }
       return NotUsed.getInstance();
     });
-
   }
 
   public static void client(ActorSystem system, InetSocketAddress serverAddress) {
     final ActorMaterializer materializer = ActorMaterializer.create(system);
 
-    final List<ByteString> testInput = new ArrayList<>();
-    for (char c = 'a'; c <= 'z'; c++) {
-      testInput.add(ByteString.fromString(String.valueOf(c)));
-    }
+    Flow<ByteString, ByteString, NotUsed> commandHandling = Flow.fromFunction(bs -> {
+      System.out.println("Handling input " + bs.utf8String());
+      return ByteString.fromString("response to " + bs.utf8String() + "\n");
+    });
 
-    Source<ByteString, NotUsed> responseStream =
-      Source.from(testInput).via(Tcp.get(system).outgoingConnection(serverAddress.getHostString(), serverAddress.getPort()));
+    Flow<ByteString, ByteString, NotUsed> streamHandling =
+      Framing.delimiter(ByteString.fromString("\n"), 120)
+        .via(commandHandling);
 
-    CompletionStage<ByteString> result = responseStream.runFold(
-      ByteString.empty(), (acc, in) -> acc.concat(in), materializer);
+    Flow<ByteString, ByteString, CompletionStage<Tcp.OutgoingConnection>> connectionFlow =
+      Tcp.get(system).outgoingConnection(serverAddress.getHostString(), serverAddress.getPort());
+
+    CompletionStage<Tcp.OutgoingConnection> result =
+      connectionFlow
+        .join(streamHandling)
+        .run(materializer);
 
     result.handle((success, failure) -> {
       if (failure != null) {
-        System.err.println("Failure: " + failure.getMessage());
+        system.log().info("Failure: " + failure.getMessage());
       } else {
-        System.out.println("Result: " + success.utf8String());
+        system.log().info("Connected, handling commands from server");
       }
-      System.out.println("Shutting down client");
-      system.shutdown();
       return NotUsed.getInstance();
     });
   }

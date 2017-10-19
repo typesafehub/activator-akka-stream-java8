@@ -74,21 +74,40 @@ public class TcpTLSEcho {
   public static void server(ActorSystem system, InetSocketAddress serverAddress) {
     final ActorMaterializer materializer = ActorMaterializer.create(system);
 
-    final Sink<IncomingConnection, CompletionStage<Done>> handler = Sink.foreach((IncomingConnection conn) -> {
-      system.log().info("Client connected from: " + conn.remoteAddress());
+    final List<ByteString> testInput = new ArrayList<>();
+    for (char c = 'a'; c <= 'z'; c++) {
+      // Note all commands are \n-terminated, even the last one.
+      testInput.add(ByteString.fromString("COMMAND " + String.valueOf(c) + "\n"));
+    }
 
-      final Flow<ByteString, ByteString, NotUsed> h =
-        Flow.<ByteString>create()
-          // .log("Server raw incoming bytes") // uncomment to see encrypted raw bytes
-          .via(tlsStage(system, TLSRole.server()).reversed()
-          .join(
-            Flow.<ByteString>create().log("in the server handler", bs -> bs.utf8String())
-            .takeWhile(p -> p.utf8String().endsWith("z"), true) // close connection once "z" received (last letter we expect)
-          ));
+    final Sink<ByteString, CompletionStage<Done>> responseFromClientSink =
+      Framing.delimiter(ByteString.fromString("\n"), 120)
+        .toMat(Sink.foreach(bs -> System.out.println("Got response from client: " + bs.utf8String())), Keep.right());
 
-      conn.handleWith(h, materializer);
+    final Sink<IncomingConnection, CompletionStage<Done>> handler = Sink.foreach(conn -> {
+      System.out.println("Client connected from: " + conn.remoteAddress());
+      Flow<ByteString, ByteString, NotUsed> flow = Flow.<ByteString>create()
+        // .log("Server raw incoming bytes") // uncomment to see encrypted raw bytes
+        .via(tlsStage(system, TLSRole.server()).reversed()
+          .join(Flow.fromSinkAndSource(responseFromClientSink, Source.from(testInput))));
+
+        conn.handleWith(flow, materializer);
     });
 
+//    final Sink<IncomingConnection, CompletionStage<Done>> handler = Sink.foreach((IncomingConnection conn) -> {
+//      system.log().info("Client connected from: " + conn.remoteAddress());
+//
+//      final Flow<ByteString, ByteString, NotUsed> h =
+//        Flow.<ByteString>create()
+//          // .log("Server raw incoming bytes") // uncomment to see encrypted raw bytes
+//          .via(tlsStage(system, TLSRole.server()).reversed()
+//          .join(
+//            Flow.<ByteString>create().log("in the server handler", bs -> bs.utf8String())
+//            .takeWhile(p -> p.utf8String().endsWith("z"), true) // close connection once "z" received (last letter we expect)
+//          ));
+//
+//      conn.handleWith(h, materializer);
+//    });
 
     final CompletionStage<ServerBinding> bindingFuture =
       Tcp.get(system).bind(serverAddress.getHostString(), serverAddress.getPort()).to(handler).run(materializer);
@@ -113,32 +132,30 @@ public class TcpTLSEcho {
   public static void client(ActorSystem system, InetSocketAddress serverAddress) throws Exception {
     final ActorMaterializer materializer = ActorMaterializer.create(system);
 
-    final List<ByteString> testInput = new ArrayList<>();
-    for (char c = 'a'; c <= 'z'; c++) {
-      testInput.add(ByteString.fromString(String.valueOf(c)));
-    }
+    Flow<ByteString, ByteString, NotUsed> commandHandling = Flow.fromFunction(bs -> {
+      System.out.println("Handling input " + bs.utf8String());
+      return ByteString.fromString("response to " + bs.utf8String() + "\n");
+    });
 
-    final Sink<ByteString, CompletionStage<ByteString>> sink = Sink.fold(
-      ByteString.empty(), (acc, in) -> acc.concat(in));
-
-    final Source<ByteString, NotUsed> source = Source.from(testInput).log("Element out", bs -> bs.utf8String());
+    Flow<ByteString, ByteString, NotUsed> streamHandling =
+      Framing.delimiter(ByteString.fromString("\n"), 120)
+        .via(commandHandling);
 
     final Flow<ByteString, ByteString, CompletionStage<Tcp.OutgoingConnection>> connection =
       Tcp.get(system).outgoingConnection(serverAddress.getHostString(), serverAddress.getPort());
 
-    final CompletionStage<ByteString> result = Flow.fromSinkAndSourceMat(sink, source, Keep.left())
-      .joinMat(tlsStage(system, TLSRole.client()), Keep.left())
-      .joinMat(Flow.<ByteString>create().via(connection), Keep.left())
-      .run(materializer);
+    final CompletionStage<Tcp.OutgoingConnection> result =
+      connection
+        .join(tlsStage(system, TLSRole.client()).reversed())
+        .join(streamHandling)
+        .run(materializer);
 
     result.handle((success, failure) -> {
       if (failure != null) {
         system.log().info("Failure: " + failure.getMessage());
       } else {
-        system.log().info("Result: " + success.utf8String());
+        system.log().info("Connected, handling commands from server");
       }
-      system.log().info("Shutting down client");
-      system.terminate();
       return NotUsed.getInstance();
     });
   }
