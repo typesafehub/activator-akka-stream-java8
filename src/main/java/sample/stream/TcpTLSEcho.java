@@ -94,21 +94,6 @@ public class TcpTLSEcho {
         conn.handleWith(flow, materializer);
     });
 
-//    final Sink<IncomingConnection, CompletionStage<Done>> handler = Sink.foreach((IncomingConnection conn) -> {
-//      system.log().info("Client connected from: " + conn.remoteAddress());
-//
-//      final Flow<ByteString, ByteString, NotUsed> h =
-//        Flow.<ByteString>create()
-//          // .log("Server raw incoming bytes") // uncomment to see encrypted raw bytes
-//          .via(tlsStage(system, TLSRole.server()).reversed()
-//          .join(
-//            Flow.<ByteString>create().log("in the server handler", bs -> bs.utf8String())
-//            .takeWhile(p -> p.utf8String().endsWith("z"), true) // close connection once "z" received (last letter we expect)
-//          ));
-//
-//      conn.handleWith(h, materializer);
-//    });
-
     final CompletionStage<ServerBinding> bindingFuture =
       Tcp.get(system).bind(serverAddress.getHostString(), serverAddress.getPort()).to(handler).run(materializer);
 
